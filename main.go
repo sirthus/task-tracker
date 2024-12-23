@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 )
@@ -18,6 +19,8 @@ var tasks = []Task{
 	{ID: 123, Title: "Doctor's appointment", Completed: true},
 }
 
+var lastID = 123
+
 func main() {
 	http.HandleFunc("/tasks", Tasks)
 	http.ListenAndServe("localhost:8000", nil)
@@ -27,16 +30,41 @@ func Tasks(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("%s %s", r.Method, r.URL.Path)
 
-	if r.Method != "GET" {
+	if r.Method != "GET" && r.Method != "POST" {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	jsonData, err := json.Marshal(tasks)
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
+	switch r.Method {
+	case "GET":
+		jsonData, err := json.Marshal(tasks)
+		if err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
 
-	w.Write(jsonData)
+		w.Write(jsonData)
+	case "POST":
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Error reading data.", http.StatusBadRequest)
+			return
+		}
+
+		var newTask Task
+		err = json.Unmarshal(body, &newTask)
+		if err != nil {
+			http.Error(w, "Error reading data.", http.StatusBadRequest)
+			return
+		}
+		lastID++
+		newTask.ID = lastID
+
+		tasks = append(tasks, newTask)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(newTask)
+	}
+
 }
