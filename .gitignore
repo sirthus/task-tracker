@@ -1,0 +1,8 @@
+# Go-related
+/bin/
+/pkg/
+/vendor/
+*.exe
+*.log
+*.out
+*.test
