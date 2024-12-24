@@ -23,3 +23,7 @@ coverage.out
 *.log
 *.out
 *.test
+
+# Temporary editor backup files
+*.~ 
+*.un~
