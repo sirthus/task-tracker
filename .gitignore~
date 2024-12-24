@@ -1,0 +1,25 @@
+# Go-related
+/bin/
+/pkg/
+/vendor/
+*.exe
+*.log
+*.out
+*.test
+
+# Coverage files
+coverage.out
+
+# Editor-specific
+.vscode/
+.idea/
+
+# OS-specific
+.DS_Store# Go-related
+/bin/
+/pkg/
+/vendor/
+*.exe
+*.log
+*.out
+*.test
