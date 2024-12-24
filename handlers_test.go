@@ -7,11 +7,30 @@ import (
 	"testing"
 )
 
+type getTasksTestCase struct {
+	name       string // test case name
+	wantStatus int    // expected HTTP status code
+	wantBody   string // expected response body
+}
+
 type postTaskTestCase struct {
 	name       string // test case name
 	payload    string // the json payload sent in request
 	wantStatus int    // expected http status code
 	wantBody   string // expected response body
+}
+
+var getTests = []getTasksTestCase{
+	{
+		name:       "Retrieve Tasks",
+		wantStatus: http.StatusOK,
+		wantBody:   `[{"id":1,"title":"Clean the carpet","completed":false},{"id":2,"title":"Pick up the groceries","completed":false},{"id":123,"title":"Doctor's appointment","completed":true}]`,
+	},
+	{
+		name:       "No Tasks Available",
+		wantStatus: http.StatusOK,
+		wantBody:   `[]`,
+	},
 }
 
 var tests = []postTaskTestCase{
@@ -51,6 +70,41 @@ var tests = []postTaskTestCase{
 		wantStatus: http.StatusBadRequest,
 		wantBody:   `{"error":"Task title cannot be empty"}`,
 	},
+}
+
+func TestGetTasks(t *testing.T) {
+	for _, tt := range getTests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.name == "No Tasks Available" {
+				// Backup the original tasks slice
+				originalTasks := tasks
+				defer func() {
+					tasks = originalTasks // Restore tasks after the test
+				}()
+
+				// Simulate no tasks
+				tasks = []Task{}
+			}
+
+			// Simulate GET request
+			req := httptest.NewRequest(http.MethodGet, "/tasks", nil)
+			rec := httptest.NewRecorder()
+
+			// Call the handler
+			Tasks(rec, req)
+
+			// Validate the status code
+			if rec.Code != tt.wantStatus {
+				t.Errorf("got status %d, want %d", rec.Code, tt.wantStatus)
+			}
+
+			// Validate the response body
+			gotBody := strings.TrimSpace(rec.Body.String())
+			if gotBody != tt.wantBody {
+				t.Errorf("got body %s, want %s", gotBody, tt.wantBody)
+			}
+		})
+	}
 }
 
 func TestCreateTask(t *testing.T) {
