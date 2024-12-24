@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -35,6 +36,10 @@ var (
 )
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	logInfo("Starting server on http://localhost:8000")
+
 	http.HandleFunc("/tasks/", Tasks)
 	http.HandleFunc("/long", longRunningHandler)
 	doneChan := make(chan struct{})
@@ -74,10 +79,11 @@ func longRunningHandler(w http.ResponseWriter, r *http.Request) {
 // Tasks handles requests to retrieve, create, or delete tasks via HTTP methods.
 func Tasks(w http.ResponseWriter, r *http.Request) {
 	// Prints log to Stdout
-	log.Printf("%s %s", r.Method, r.URL.Path)
+	logInfo("Received %s request for %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
 
 	// Check that method type is supported
-	if r.Method != "GET" && r.Method != "POST" && r.Method != "DELETE" {
+	if r.Method != "GET" && r.Method != "POST" && r.Method != "PUT" && r.Method != "DELETE" {
+		logError("Unsupported method: %s", r.Method)
 		writeJsonError(w, http.StatusMethodNotAllowed, "Method Not Allowed")
 		return
 	}
@@ -88,6 +94,7 @@ func Tasks(w http.ResponseWriter, r *http.Request) {
 		defer taskMutex.Unlock()
 		jsonData, err := json.Marshal(tasks)
 		if err != nil {
+			logError("JSON marshalling failed")
 			writeJsonError(w, http.StatusInternalServerError, "Internal server error: JSON marshalling failed")
 			return
 		}
@@ -99,6 +106,7 @@ func Tasks(w http.ResponseWriter, r *http.Request) {
 		// Reads the body for valid json to add as new task
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
+			logError("Failed to read request body")
 			writeJsonError(w, http.StatusBadRequest, "Failed to read request body")
 			return
 		}
@@ -107,10 +115,12 @@ func Tasks(w http.ResponseWriter, r *http.Request) {
 		// Unmarshals json into struct fields
 		err = json.Unmarshal(body, &newTask)
 		if err != nil {
+			logError("Invalid JSON Format in POST request")
 			writeJsonError(w, http.StatusBadRequest, "Invalid JSON format")
 			return
 		}
 		if newTask.Title == "" {
+			logError("Invalid task title in POST request")
 			writeJsonError(w, http.StatusBadRequest, "Task title cannot be empty")
 			return
 		}
@@ -126,20 +136,62 @@ func Tasks(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		// Writes new task back to client
 		json.NewEncoder(w).Encode(newTask)
-	case "DELETE":
-		// Cleans path to allow trailing slashes
-		r.URL.Path = path.Clean(r.URL.Path)
-		// Splits URL based on /
-		parts := strings.Split(r.URL.Path, "/")
-		// Checks that URL is properly formed "host/tasks/{id}"
-		if len(parts) != 3 {
-			writeJsonError(w, http.StatusBadRequest, "Invalid URL")
+	case "PUT":
+		ID, err := ParseTaskID(r)
+		if err != nil {
+			logError(err.Error())
+			writeJsonError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		// Converts task number to integer
-		ID, err := strconv.Atoi(parts[len(parts)-1])
+		// Reads the body for valid json to add as new task
+		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			writeJsonError(w, http.StatusBadRequest, "Invalid Task ID")
+			logError("Failed to read request body in PUT")
+			writeJsonError(w, http.StatusBadRequest, "Failed to read request body")
+			return
+		}
+		var newTask Task
+		// Unmarshals json into struct fields
+		err = json.Unmarshal(body, &newTask)
+		if err != nil {
+			logError("Invalid JSON format in PUT")
+			writeJsonError(w, http.StatusBadRequest, "Invalid JSON format")
+			return
+		}
+		if newTask.Title == "" {
+			logError("Empty task title in PUT")
+			writeJsonError(w, http.StatusBadRequest, "Task title cannot be empty")
+			return
+		}
+		// taskFound tracks whether specified task number exists
+		taskFound := false
+		// Removes specified task if found
+		taskMutex.Lock()
+		defer taskMutex.Unlock()
+		var updatedIndex int
+		for i, t := range tasks {
+			if t.ID == ID {
+				tasks[i].Title = newTask.Title
+				tasks[i].Completed = newTask.Completed
+				updatedIndex = i
+				taskFound = true
+				break
+			}
+		}
+		if !taskFound {
+			logError("Task not found in PUT")
+			writeJsonError(w, http.StatusNotFound, "Task not found")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		// Outputs success message in json format
+		json.NewEncoder(w).Encode(tasks[updatedIndex])
+
+	case "DELETE":
+		ID, err := ParseTaskID(r)
+		if err != nil {
+			logError(err.Error())
+			writeJsonError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		// taskFound tracks whether specified task number exists
@@ -155,6 +207,7 @@ func Tasks(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !taskFound {
+			logError("Task not found in DELETE")
 			writeJsonError(w, http.StatusNotFound, "Task not found")
 			return
 		}
@@ -168,4 +221,29 @@ func writeJsonError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]string{"error": message})
+}
+
+func logInfo(msg string, args ...interface{}) {
+	log.Printf("[INFO] "+msg, args...)
+}
+
+func logError(msg string, args ...interface{}) {
+	log.Printf("[Error] "+msg, args...)
+}
+
+func ParseTaskID(r *http.Request) (int, error) {
+	// Cleans path to allow trailing slashes
+	r.URL.Path = path.Clean(r.URL.Path)
+	// Splits URL based on /
+	parts := strings.Split(r.URL.Path, "/")
+	// Checks that URL is properly formed "host/tasks/{id}"
+	if len(parts) != 3 {
+		return 0, fmt.Errorf("Invalid URL")
+	}
+	// Converts task number to integer
+	ID, err := strconv.Atoi(parts[len(parts)-1])
+	if err != nil {
+		return 0, fmt.Errorf("Invalid Task ID")
+	}
+	return ID, nil
 }
