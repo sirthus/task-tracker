@@ -1,0 +1,10 @@
+# Ignore Git-specific files
+.git
+.gitignore
+
+# Ignore temporary files
+*.log
+*.tmp
+
+# Ignore local-only files
+tasks.json

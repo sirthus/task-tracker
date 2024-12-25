@@ -24,20 +24,21 @@ type Task struct {
 	Completed bool   `json:"completed"`
 }
 
-var tasks = []Task{
-	{ID: 1, Title: "Clean the carpet", Completed: false},
-	{ID: 2, Title: "Pick up the groceries", Completed: false},
-	{ID: 123, Title: "Doctor's appointment", Completed: true},
-}
+var tasks = []Task{}
 
 var (
-	lastID    = 123
+	lastID    int
 	taskMutex sync.Mutex
 )
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
+	err := LoadTasksFromFile("tasks.json")
+	if err != nil {
+		log.Fatalf("Failed to load tasks from tasks.json: %v", err)
+	}
+	logInfo("Tasks successfully loaded from tasks.json")
 	logInfo("Starting server on http://localhost:8000")
 
 	http.Handle("/tasks/", LogRequestDuration(ValidateJSON(http.HandlerFunc(Tasks), http.MethodPost, http.MethodPut)))
@@ -49,20 +50,31 @@ func main() {
 		Handler: http.DefaultServeMux,
 	}
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 
 	go func() {
 		<-sigChan
-		log.Println("Shutting down gracefully...")
+		log.Println("Received shutdown signal, shutting down gracefully...")
+
+		// Create a timeout context for the shutdown process
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+
+		// Save tasks before shutdown
+		if err := SaveTasksToFile("tasks.json"); err != nil {
+			log.Printf("Failed to save tasks to tasks.json: %v", err)
+		} else {
+			log.Println("Tasks saved to tasks.json")
+		}
+
+		// Attempt graceful shutdown
 		if err := srv.Shutdown(ctx); err != nil {
 			log.Fatalf("Server forced to shutdown: %v", err)
 		}
 		close(doneChan)
 	}()
 
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err = srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Listen failed: %v", err)
 	}
 
@@ -180,8 +192,8 @@ func Tasks(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !taskFound {
-			logError("Task not found in PUT")
-			writeJsonError(w, http.StatusNotFound, "Task not found")
+			logError("Task not found with ID %d in PUT", ID)
+			writeJsonError(w, http.StatusNotFound, fmt.Sprintf("No task found with ID %d", ID))
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -208,8 +220,8 @@ func Tasks(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !taskFound {
-			logError("Task not found in DELETE")
-			writeJsonError(w, http.StatusNotFound, "Task not found")
+			logError("Task not found with ID %d in DELETE", ID)
+			writeJsonError(w, http.StatusNotFound, fmt.Sprintf("No task found with ID %d", ID))
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -247,4 +259,56 @@ func ParseTaskID(r *http.Request) (int, error) {
 		return 0, fmt.Errorf("Invalid Task ID")
 	}
 	return ID, nil
+}
+
+func LoadTasksFromFile(filename string) error {
+	file, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if err := json.NewDecoder(file).Decode(&tasks); err != nil {
+		return err
+	}
+	log.Printf("Tasks loaded successfully from %s", filename)
+
+	// caluclate lastID
+	lastID = 0
+	for _, task := range tasks {
+		if task.ID > lastID {
+			lastID = task.ID
+		}
+	}
+
+	return nil
+}
+
+func SaveTasksToFile(filename string) error {
+	// Create backup of old tasks.json
+	backupFilename := filename + ".bak"
+	if _, err := os.Stat(filename); err == nil { // Check if file exists
+		if err := os.Rename(filename, backupFilename); err != nil {
+			log.Printf("Warning: Failed to create backup %s: %v", backupFilename, err)
+		} else {
+			log.Printf("Backup created: %s", backupFilename)
+		}
+	}
+
+	// Overwrite original file
+	file, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// Write JSON to file
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	if err = encoder.Encode(tasks); err != nil {
+		return err
+	}
+
+	log.Printf("Tasks successfully saved to %s", filename)
+	return nil
 }

@@ -12,17 +12,19 @@ coverage.out
 
 # Editor-specific
 .vscode/
+.idea/
 
 # OS-specific
-.DS_Store
+.DS_Store# Go-related
+/bin/
+/pkg/
+/vendor/
+*.exe
+*.log
+*.out
+*.test
 
 # Temporary editor backup files
-*.~
+*.~ 
 *.un~
-
-# Local-only files
 tasks.json
-
-# Environment files
-.env
-
