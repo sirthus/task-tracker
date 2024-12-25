@@ -6,5 +6,11 @@
 *.log
 *.tmp
 
+# Ignore environment configuration
+*.env
+
 # Ignore local-only files
 tasks.json
+
+# Ignore macOS-specific metadata files
+.DS_Store

@@ -40,12 +40,16 @@ func main() {
 	}
 	logInfo("Starting server on http://localhost:8000")
 
+	http.Handle("/tasks", LogRequestDuration(ValidateJSON(http.HandlerFunc(Tasks), http.MethodPost, http.MethodPut)))
 	http.Handle("/tasks/", LogRequestDuration(ValidateJSON(http.HandlerFunc(Tasks), http.MethodPost, http.MethodPut)))
 	http.Handle("/long/", LogRequestDuration(http.HandlerFunc(longRunningHandler)))
-
+	http.HandleFunc("/tasks/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
 	doneChan := make(chan struct{})
 	srv := &http.Server{
-		Addr:    "localhost:8000",
+		Addr:    "0.0.0.0:8000",
 		Handler: http.DefaultServeMux,
 	}
 	sigChan := make(chan os.Signal, 1)

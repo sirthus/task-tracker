@@ -10,7 +10,7 @@
 *.env
 
 # Ignore local-only files
-tasks.json
+#tasks.json
 
 # Ignore macOS-specific metadata files
 .DS_Store
