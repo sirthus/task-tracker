@@ -7,6 +7,13 @@ import (
 	"testing"
 )
 
+type invalidURLTestCase struct {
+	name       string // Test case name
+	method     string // HTTP method
+	url        string // Endpoint
+	wantStatus int    // Expected status code
+}
+
 type getTasksTestCase struct {
 	name       string // test case name
 	wantStatus int    // expected HTTP status code
@@ -18,6 +25,27 @@ type postTaskTestCase struct {
 	payload    string // the json payload sent in request
 	wantStatus int    // expected http status code
 	wantBody   string // expected response body
+}
+
+var invalidURLTests = []invalidURLTestCase{
+	{
+		name:       "Invalid Endpoint",
+		method:     http.MethodGet,
+		url:        "/invalid",
+		wantStatus: http.StatusNotFound,
+	},
+	{
+		name:       "Invalid Tasks Subpath",
+		method:     http.MethodPost,
+		url:        "/tasks/invalid",
+		wantStatus: http.StatusNotFound,
+	},
+	{
+		name:       "Empty Path",
+		method:     http.MethodGet,
+		url:        "/",
+		wantStatus: http.StatusNotFound,
+	},
 }
 
 var getTests = []getTasksTestCase{
@@ -70,6 +98,24 @@ var tests = []postTaskTestCase{
 		wantStatus: http.StatusBadRequest,
 		wantBody:   `{"error":"Task title cannot be empty"}`,
 	},
+}
+
+func TestInvalidURLs(t *testing.T) {
+	for _, tt := range invalidURLTests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a request for the invalid URL
+			req := httptest.NewRequest(tt.method, tt.url, nil)
+			rec := httptest.NewRecorder()
+
+			// Use the default handler to simulate the server behavior
+			http.DefaultServeMux.ServeHTTP(rec, req)
+
+			// Validate the status code
+			if rec.Code != tt.wantStatus {
+				t.Errorf("Test %s: got status %d, want %d", tt.name, rec.Code, tt.wantStatus)
+			}
+		})
+	}
 }
 
 func TestGetTasks(t *testing.T) {
