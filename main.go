@@ -40,8 +40,9 @@ func main() {
 
 	logInfo("Starting server on http://localhost:8000")
 
-	http.HandleFunc("/tasks/", Tasks)
-	http.HandleFunc("/long", longRunningHandler)
+	http.Handle("/tasks/", LogRequestDuration(ValidateJSON(http.HandlerFunc(Tasks), http.MethodPost, http.MethodPut)))
+	http.Handle("/long/", LogRequestDuration(http.HandlerFunc(longRunningHandler)))
+
 	doneChan := make(chan struct{})
 	srv := &http.Server{
 		Addr:    "localhost:8000",
