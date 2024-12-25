@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -12,6 +14,13 @@ type invalidURLTestCase struct {
 	method     string // HTTP method
 	url        string // Endpoint
 	wantStatus int    // Expected status code
+}
+
+type unsupportedMethodTestCase struct {
+	name       string // Test case name
+	method     string // HTTP method
+	url        string // Endpoint
+	wantStatus int    // Expected HTTP status code
 }
 
 type getTasksTestCase struct {
@@ -35,6 +44,13 @@ type putTaskTestCase struct {
 	wantBody   string // Expected response body
 }
 
+type deleteTaskTestCase struct {
+	name       string // Test case name
+	id         string // Task ID to delete
+	wantStatus int    // Expected HTTP status code
+	wantBody   string // Expected response body
+}
+
 var invalidURLTests = []invalidURLTestCase{
 	{
 		name:       "Invalid Endpoint",
@@ -53,6 +69,51 @@ var invalidURLTests = []invalidURLTestCase{
 		method:     http.MethodGet,
 		url:        "/",
 		wantStatus: http.StatusNotFound,
+	},
+}
+
+var unsupportedMethodTests = []unsupportedMethodTestCase{
+	{
+		name:       "PUT on /tasks",
+		method:     http.MethodPut,
+		url:        "/tasks",
+		wantStatus: http.StatusNotFound, // 404
+	},
+	{
+		name:       "DELETE on /tasks",
+		method:     http.MethodDelete,
+		url:        "/tasks",
+		wantStatus: http.StatusNotFound, // 404
+	},
+	{
+		name:       "PATCH on /tasks/{id}",
+		method:     http.MethodPatch,
+		url:        "/tasks/1",
+		wantStatus: http.StatusNotFound, // 404
+	},
+	{
+		name:       "PATCH on /tasks/",
+		method:     http.MethodPatch,
+		url:        "/tasks/",
+		wantStatus: http.StatusNotFound, // 404
+	},
+	{
+		name:       "HEAD on /tasks/",
+		method:     http.MethodHead,
+		url:        "/tasks/",
+		wantStatus: http.StatusNotFound, // 404 for unregistered method
+	},
+	{
+		name:       "OPTIONS on /tasks/",
+		method:     http.MethodOptions,
+		url:        "/tasks/",
+		wantStatus: http.StatusNotFound, // 404 for unregistered method
+	},
+	{
+		name:       "Invalid HTTP Method on /tasks/",
+		method:     "FOO",
+		url:        "/tasks/",
+		wantStatus: http.StatusNotFound, // 404 for invalid method
 	},
 }
 
@@ -153,6 +214,27 @@ var putTests = []putTaskTestCase{
 	},
 }
 
+var deleteTests = []deleteTaskTestCase{
+	{
+		name:       "Delete Existing Task",
+		id:         "1",
+		wantStatus: http.StatusOK,
+		wantBody:   `{"message":"Task deleted","status":"success"}`,
+	},
+	{
+		name:       "Task Not Found",
+		id:         "999",
+		wantStatus: http.StatusNotFound,
+		wantBody:   `{"error":"Task not found"}`,
+	},
+	{
+		name:       "Invalid ID",
+		id:         "abc",
+		wantStatus: http.StatusBadRequest,
+		wantBody:   `{"error":"Invalid Task ID"}`,
+	},
+}
+
 func TestInvalidURLs(t *testing.T) {
 	for _, tt := range invalidURLTests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -161,6 +243,24 @@ func TestInvalidURLs(t *testing.T) {
 			rec := httptest.NewRecorder()
 
 			// Use the default handler to simulate the server behavior
+			http.DefaultServeMux.ServeHTTP(rec, req)
+
+			// Validate the status code
+			if rec.Code != tt.wantStatus {
+				t.Errorf("Test %s: got status %d, want %d", tt.name, rec.Code, tt.wantStatus)
+			}
+		})
+	}
+}
+
+func TestUnsupportedMethods(t *testing.T) {
+	for _, tt := range unsupportedMethodTests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a request with the unsupported method
+			req := httptest.NewRequest(tt.method, tt.url, nil)
+			rec := httptest.NewRecorder()
+
+			// Call the handler
 			http.DefaultServeMux.ServeHTTP(rec, req)
 
 			// Validate the status code
@@ -254,5 +354,74 @@ func TestUpdateTask(t *testing.T) {
 				t.Errorf("Test %s: got body %s, want %s", tt.name, gotBody, tt.wantBody)
 			}
 		})
+	}
+}
+
+func TestDeleteTask(t *testing.T) {
+	for _, tt := range deleteTests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create the request
+			req := httptest.NewRequest(http.MethodDelete, "/tasks/"+tt.id, nil)
+			rec := httptest.NewRecorder()
+
+			// Call the handler
+			Tasks(rec, req)
+
+			// Validate the status code
+			if rec.Code != tt.wantStatus {
+				t.Errorf("Test %s: got status %d, want %d", tt.name, rec.Code, tt.wantStatus)
+			}
+
+			// Validate the response body
+			gotBody := strings.TrimSpace(rec.Body.String())
+			if gotBody != tt.wantBody {
+				t.Errorf("Test %s: got body %s, want %s", tt.name, gotBody, tt.wantBody)
+			}
+		})
+	}
+}
+
+func TestTasksConcurrency(t *testing.T) {
+	// Start with an empty tasks slice
+	tasks = []Task{}
+	lastID = 123 // Start IDs from 124
+
+	var wg sync.WaitGroup
+	const numGoroutines = 100
+
+	// Simulate concurrent POST requests
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+
+			payload := fmt.Sprintf(`{"title": "Task %d", "completed": false}`, id)
+			req := httptest.NewRequest(http.MethodPost, "/tasks", strings.NewReader(payload))
+			rec := httptest.NewRecorder()
+
+			Tasks(rec, req)
+
+			// Validate the status code
+			if rec.Code != http.StatusCreated {
+				t.Errorf("POST failed for goroutine %d: got status %d, want %d", id, rec.Code, http.StatusCreated)
+			}
+		}(i)
+	}
+
+	// Wait for all POST requests to complete
+	wg.Wait()
+
+	// Validate the number of tasks
+	if len(tasks) != numGoroutines {
+		t.Errorf("Expected %d tasks, got %d", numGoroutines, len(tasks))
+	}
+
+	// Validate sequential IDs (lastID currently hardcoded to 123)
+	startingID := 124
+	for i, task := range tasks {
+		expectedID := startingID + i
+		if task.ID != expectedID {
+			t.Errorf("Task ID mismatch at index %d: got %d, want %d", i, task.ID, expectedID)
+		}
 	}
 }
