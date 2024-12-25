@@ -38,7 +38,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load tasks from tasks.json: %v", err)
 	}
-	logInfo("Tasks successfully loaded from tasks.json")
 	logInfo("Starting server on http://localhost:8000")
 
 	http.Handle("/tasks/", LogRequestDuration(ValidateJSON(http.HandlerFunc(Tasks), http.MethodPost, http.MethodPut)))
@@ -54,7 +53,7 @@ func main() {
 
 	go func() {
 		<-sigChan
-		log.Println("Received shutdown signal, shutting down gracefully...")
+		logInfo("Received shutdown signal, shutting down gracefully...")
 
 		// Create a timeout context for the shutdown process
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -62,9 +61,9 @@ func main() {
 
 		// Save tasks before shutdown
 		if err := SaveTasksToFile("tasks.json"); err != nil {
-			log.Printf("Failed to save tasks to tasks.json: %v", err)
+			logError("Failed to save tasks to tasks.json: %v", err)
 		} else {
-			log.Println("Tasks saved to tasks.json")
+			logInfo("Tasks saved to tasks.json")
 		}
 
 		// Attempt graceful shutdown
@@ -271,7 +270,7 @@ func LoadTasksFromFile(filename string) error {
 	if err := json.NewDecoder(file).Decode(&tasks); err != nil {
 		return err
 	}
-	log.Printf("Tasks loaded successfully from %s", filename)
+	logInfo("Tasks loaded successfully from %s", filename)
 
 	// caluclate lastID
 	lastID = 0
@@ -289,9 +288,9 @@ func SaveTasksToFile(filename string) error {
 	backupFilename := filename + ".bak"
 	if _, err := os.Stat(filename); err == nil { // Check if file exists
 		if err := os.Rename(filename, backupFilename); err != nil {
-			log.Printf("Warning: Failed to create backup %s: %v", backupFilename, err)
+			logError("Warning: Failed to create backup %s: %v", backupFilename, err)
 		} else {
-			log.Printf("Backup created: %s", backupFilename)
+			logInfo("Backup created: %s", backupFilename)
 		}
 	}
 
@@ -309,6 +308,6 @@ func SaveTasksToFile(filename string) error {
 		return err
 	}
 
-	log.Printf("Tasks successfully saved to %s", filename)
+	logInfo("Tasks successfully saved to %s", filename)
 	return nil
 }
