@@ -27,6 +27,14 @@ type postTaskTestCase struct {
 	wantBody   string // expected response body
 }
 
+type putTaskTestCase struct {
+	name       string // Test case name
+	id         string // Task ID to update
+	payload    string // The JSON payload sent in the request
+	wantStatus int    // Expected HTTP status code
+	wantBody   string // Expected response body
+}
+
 var invalidURLTests = []invalidURLTestCase{
 	{
 		name:       "Invalid Endpoint",
@@ -61,7 +69,7 @@ var getTests = []getTasksTestCase{
 	},
 }
 
-var tests = []postTaskTestCase{
+var postTests = []postTaskTestCase{
 	{
 		name:       "First Valid Task",
 		payload:    `{"title": "New Task 1", "completed": false}`,
@@ -97,6 +105,51 @@ var tests = []postTaskTestCase{
 		payload:    `{}`,
 		wantStatus: http.StatusBadRequest,
 		wantBody:   `{"error":"Task title cannot be empty"}`,
+	},
+}
+
+var putTests = []putTaskTestCase{
+	{
+		name:       "Update Existing Task",
+		id:         "1",
+		payload:    `{"title": "Updated Task", "completed": true}`,
+		wantStatus: http.StatusOK,
+		wantBody:   `{"id":1,"title":"Updated Task","completed":true}`,
+	},
+	{
+		name:       "Task Not Found",
+		id:         "999",
+		payload:    `{"title": "Nonexistent Task", "completed": false}`,
+		wantStatus: http.StatusNotFound,
+		wantBody:   `{"error":"Task not found"}`,
+	},
+	{
+		name:       "Invalid JSON",
+		id:         "1",
+		payload:    `{"title": "Missing Comma"`,
+		wantStatus: http.StatusBadRequest,
+		wantBody:   `{"error":"Invalid JSON format"}`,
+	},
+	{
+		name:       "Empty Title",
+		id:         "1",
+		payload:    `{"title": "", "completed": false}`,
+		wantStatus: http.StatusBadRequest,
+		wantBody:   `{"error":"Task title cannot be empty"}`,
+	},
+	{
+		name:       "Invalid ID",
+		id:         "abc",
+		payload:    `{"title": "Invalid ID", "completed": true}`,
+		wantStatus: http.StatusBadRequest,
+		wantBody:   `{"error":"Invalid Task ID"}`,
+	},
+	{
+		name:       "Missing Status (Defaults to False)",
+		id:         "1",
+		payload:    `{"title": "Task Without Status"}`,
+		wantStatus: http.StatusOK,
+		wantBody:   `{"id":1,"title":"Task Without Status","completed":false}`,
 	},
 }
 
@@ -154,7 +207,7 @@ func TestGetTasks(t *testing.T) {
 }
 
 func TestCreateTask(t *testing.T) {
-	for _, tt := range tests {
+	for _, tt := range postTests {
 		t.Run(tt.name, func(t *testing.T) {
 			// create request
 			req := httptest.NewRequest(http.MethodPost, "/tasks", strings.NewReader(tt.payload))
@@ -176,6 +229,30 @@ func TestCreateTask(t *testing.T) {
 				t.Errorf("Test %s: got body %s, want %s; payload: %s", tt.name, gotBody, tt.wantBody, tt.payload)
 			}
 
+		})
+	}
+}
+
+func TestUpdateTask(t *testing.T) {
+	for _, tt := range putTests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create the request
+			req := httptest.NewRequest(http.MethodPut, "/tasks/"+tt.id, strings.NewReader(tt.payload))
+			rec := httptest.NewRecorder()
+
+			// Call the handler
+			Tasks(rec, req)
+
+			// Validate the status code
+			if rec.Code != tt.wantStatus {
+				t.Errorf("Test %s: got status %d, want %d", tt.name, rec.Code, tt.wantStatus)
+			}
+
+			// Validate the response body
+			gotBody := strings.TrimSpace(rec.Body.String())
+			if gotBody != tt.wantBody {
+				t.Errorf("Test %s: got body %s, want %s", tt.name, gotBody, tt.wantBody)
+			}
 		})
 	}
 }
