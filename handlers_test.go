@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -182,7 +183,7 @@ var putTests = []putTaskTestCase{
 		id:         "999",
 		payload:    `{"title": "Nonexistent Task", "completed": false}`,
 		wantStatus: http.StatusNotFound,
-		wantBody:   `{"error":"Task not found"}`,
+		wantBody:   `{"error":"No task found with ID 999"}`,
 	},
 	{
 		name:       "Invalid JSON",
@@ -225,7 +226,7 @@ var deleteTests = []deleteTaskTestCase{
 		name:       "Task Not Found",
 		id:         "999",
 		wantStatus: http.StatusNotFound,
-		wantBody:   `{"error":"Task not found"}`,
+		wantBody:   `{"error":"No task found with ID 999"}`,
 	},
 	{
 		name:       "Invalid ID",
@@ -272,6 +273,12 @@ func TestUnsupportedMethods(t *testing.T) {
 }
 
 func TestGetTasks(t *testing.T) {
+	tasks = []Task{
+		{ID: 1, Title: "Clean the carpet", Completed: false},
+		{ID: 2, Title: "Pick up the groceries", Completed: false},
+		{ID: 123, Title: "Doctor's appointment", Completed: true},
+	}
+
 	for _, tt := range getTests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.name == "No Tasks Available" {
@@ -307,6 +314,9 @@ func TestGetTasks(t *testing.T) {
 }
 
 func TestCreateTask(t *testing.T) {
+	lastID = 123 // Initialize lastID correctly
+	tasks = []Task{}
+
 	for _, tt := range postTests {
 		t.Run(tt.name, func(t *testing.T) {
 			// create request
@@ -334,6 +344,12 @@ func TestCreateTask(t *testing.T) {
 }
 
 func TestUpdateTask(t *testing.T) {
+	tasks = []Task{
+		{ID: 1, Title: "Clean the carpet", Completed: false},
+		{ID: 2, Title: "Pick up the groceries", Completed: false},
+		{ID: 123, Title: "Doctor's appointment", Completed: true},
+	}
+
 	for _, tt := range putTests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create the request
@@ -358,6 +374,12 @@ func TestUpdateTask(t *testing.T) {
 }
 
 func TestDeleteTask(t *testing.T) {
+	tasks = []Task{
+		{ID: 1, Title: "Clean the carpet", Completed: false},
+		{ID: 2, Title: "Pick up the groceries", Completed: false},
+		{ID: 123, Title: "Doctor's appointment", Completed: true},
+	}
+
 	for _, tt := range deleteTests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create the request
@@ -423,5 +445,83 @@ func TestTasksConcurrency(t *testing.T) {
 		if task.ID != expectedID {
 			t.Errorf("Task ID mismatch at index %d: got %d, want %d", i, task.ID, expectedID)
 		}
+	}
+}
+
+func TestLoadAndSaveTasks(t *testing.T) {
+	tempFile := "test_tasks.json"
+	defer os.Remove(tempFile)
+
+	// Test saving tasks
+	tasks = []Task{
+		{ID: 1, Title: "Task 1", Completed: false},
+		{ID: 2, Title: "Task 2", Completed: true},
+	}
+	if err := SaveTasksToFile(tempFile); err != nil {
+		t.Fatalf("Failed to save tasks: %v", err)
+	}
+
+	// Clear the current tasks and test loading from the file
+	tasks = nil
+	if err := LoadTasksFromFile(tempFile); err != nil {
+		t.Fatalf("Failed to load tasks: %v", err)
+	}
+
+	// Validate loaded tasks
+	if len(tasks) != 2 {
+		t.Errorf("Expected 2 tasks, got %d", len(tasks))
+	}
+	if tasks[0].Title != "Task 1" || tasks[1].Completed != true {
+		t.Errorf("Loaded tasks do not match expected values")
+	}
+}
+
+func TestLoadTasksFromNonExistentFile(t *testing.T) {
+	nonExistentFile := "nonexistent_tasks.json"
+
+	err := LoadTasksFromFile(nonExistentFile)
+	if err == nil {
+		t.Errorf("Expected an error when loading from a non-existent file, got nil")
+	}
+}
+
+func TestSaveTasksCreatesBackup(t *testing.T) {
+	tempFile := "test_tasks.json"
+	backupFile := tempFile + ".bak"
+	defer os.Remove(tempFile)
+	defer os.Remove(backupFile)
+
+	// Initial save
+	tasks = []Task{
+		{ID: 1, Title: "Original Task", Completed: false},
+	}
+	if err := SaveTasksToFile(tempFile); err != nil {
+		t.Fatalf("Failed to save tasks: %v", err)
+	}
+
+	// Modify tasks and save again
+	tasks = []Task{
+		{ID: 2, Title: "Updated Task", Completed: true},
+	}
+	if err := SaveTasksToFile(tempFile); err != nil {
+		t.Fatalf("Failed to save tasks again: %v", err)
+	}
+
+	// Validate backup file
+	backupData, err := os.ReadFile(backupFile)
+	if err != nil {
+		t.Fatalf("Failed to read backup file: %v", err)
+	}
+	if !strings.Contains(string(backupData), "Original Task") {
+		t.Errorf("Backup file does not contain original tasks")
+	}
+}
+
+func TestSaveTasksToInvalidLocation(t *testing.T) {
+	invalidFile := "/invalid_path/test_tasks.json"
+
+	err := SaveTasksToFile(invalidFile)
+	if err == nil {
+		t.Errorf("Expected an error when saving to an invalid location, got nil")
 	}
 }
