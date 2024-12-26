@@ -18,6 +18,7 @@ coverage.out
 
 # Temporary editor backup files
 *~
+*.*~s
 *.un~
 
 # Local-only files
