@@ -17,7 +17,7 @@ coverage.out
 .DS_Store
 
 # Temporary editor backup files
-*.~
+*.*~
 *.un~
 
 # Local-only files
