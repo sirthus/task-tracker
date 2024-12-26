@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -401,50 +403,50 @@ func TestDeleteTask(t *testing.T) {
 	}
 }
 
-// func TestTasksConcurrency(t *testing.T) {
-// 	// Start with an empty tasks slice
-// 	tasks = []Task{}
-// 	lastID = 123 // Start IDs from 124
+func TestTasksConcurrency(t *testing.T) {
+	// Start with an empty tasks slice
+	tasks = []Task{}
+	lastID = 123 // Start IDs from 124
 
-// 	var wg sync.WaitGroup
-// 	const numGoroutines = 100
+	var wg sync.WaitGroup
+	const numGoroutines = 100
 
-// 	// Simulate concurrent POST requests
-// 	for i := 0; i < numGoroutines; i++ {
-// 		wg.Add(1)
-// 		go func(id int) {
-// 			defer wg.Done()
+	// Simulate concurrent POST requests
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
 
-// 			payload := fmt.Sprintf(`{"title": "Task %d", "completed": false}`, id)
-// 			req := httptest.NewRequest(http.MethodPost, "/tasks", strings.NewReader(payload))
-// 			rec := httptest.NewRecorder()
+			payload := fmt.Sprintf(`{"title": "Task %d", "completed": false}`, id)
+			req := httptest.NewRequest(http.MethodPost, "/tasks", strings.NewReader(payload))
+			rec := httptest.NewRecorder()
 
-// 			Tasks(rec, req)
+			Tasks(rec, req)
 
-// 			// Validate the status code
-// 			if rec.Code != http.StatusCreated {
-// 				t.Errorf("POST failed for goroutine %d: got status %d, want %d", id, rec.Code, http.StatusCreated)
-// 			}
-// 		}(i)
-// 	}
+			// Validate the status code
+			if rec.Code != http.StatusCreated {
+				t.Errorf("POST failed for goroutine %d: got status %d, want %d", id, rec.Code, http.StatusCreated)
+			}
+		}(i)
+	}
 
-// 	// Wait for all POST requests to complete
-// 	wg.Wait()
+	// Wait for all POST requests to complete
+	wg.Wait()
 
-// 	// Validate the number of tasks
-// 	if len(tasks) != numGoroutines {
-// 		t.Errorf("Expected %d tasks, got %d", numGoroutines, len(tasks))
-// 	}
+	// Validate the number of tasks
+	if len(tasks) != numGoroutines {
+		t.Errorf("Expected %d tasks, got %d", numGoroutines, len(tasks))
+	}
 
-// 	// Validate sequential IDs (lastID currently hardcoded to 123)
-// 	startingID := 124
-// 	for i, task := range tasks {
-// 		expectedID := startingID + i
-// 		if task.ID != expectedID {
-// 			t.Errorf("Task ID mismatch at index %d: got %d, want %d", i, task.ID, expectedID)
-// 		}
-// 	}
-// }
+	// Validate sequential IDs (lastID currently hardcoded to 123)
+	startingID := 124
+	for i, task := range tasks {
+		expectedID := startingID + i
+		if task.ID != expectedID {
+			t.Errorf("Task ID mismatch at index %d: got %d, want %d", i, task.ID, expectedID)
+		}
+	}
+}
 
 func TestLoadAndSaveTasks(t *testing.T) {
 	tempFile := "test_tasks.json"
