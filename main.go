@@ -38,8 +38,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load tasks from tasks.json: %v", err)
 	}
-	logInfo("Starting server on http://localhost:8000")
-
 	http.Handle("/tasks", LogRequestDuration(ValidateJSON(http.HandlerFunc(Tasks), http.MethodPost, http.MethodPut)))
 	http.Handle("/tasks/", LogRequestDuration(ValidateJSON(http.HandlerFunc(Tasks), http.MethodPost, http.MethodPut)))
 	http.Handle("/long/", LogRequestDuration(http.HandlerFunc(longRunningHandler)))
@@ -48,8 +46,13 @@ func main() {
 		w.Write([]byte("OK"))
 	})
 	doneChan := make(chan struct{})
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8000"
+	}
+	logInfo("Starting server on http://localhost:%s", port)
 	srv := &http.Server{
-		Addr:    "0.0.0.0:8000",
+		Addr:    "0.0.0.0:" + port,
 		Handler: http.DefaultServeMux,
 	}
 	sigChan := make(chan os.Signal, 1)
